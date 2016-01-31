@@ -1,25 +1,23 @@
-//
-//  ViewController.swift
-//  DismissKeyBoardByScrolling
-//
-//  Created by John Regner on 1/30/16.
-//  Copyright © 2016 John Regner. All rights reserved.
-//
-
 import UIKit
 
-class ViewController: UIViewController {
+class ViewController: UIViewController, UITableViewDelegate, UITableViewDataSource {
 
-	override func viewDidLoad() {
-		super.viewDidLoad()
-		// Do any additional setup after loading the view, typically from a nib.
+	@IBOutlet weak var tableView: UITableView!
+
+	lazy var data = Array(0..<200)
+
+	func tableView(tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
+		return data.count
 	}
 
-	override func didReceiveMemoryWarning() {
-		super.didReceiveMemoryWarning()
-		// Dispose of any resources that can be recreated.
+	func tableView(tableView: UITableView, cellForRowAtIndexPath indexPath: NSIndexPath) -> UITableViewCell {
+		let cell = tableView.dequeueReusableCellWithIdentifier(String(CustomCell), forIndexPath: indexPath) as! CustomCell
+		cell.label.text = String(data[indexPath.row])
+		return cell
 	}
-
-
 }
 
+class CustomCell: UITableViewCell {
+	@IBOutlet var label: UILabel!
+	@IBOutlet var textField: UITextField!
+}
