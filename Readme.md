@@ -1,16 +1,14 @@
 # Prevent First Responder Orphans
 
-I recently had an interesting bug report / feature request. When editing the title to a trip you can can easily scroll away from it and forget what the keyboard is representing.
-
-Our App's main view is a table view, where some of the cells are editable, and others are just static content (a day note vs. a day Heading)
+I recently had an interesting bug report / feature request. When editing an item in a table view with multiple editable items you can can easily scroll away from it and forget what the keyboard is editing.
 
 A good solution to this issue is to end editing when the thing you are currently editing (the first responder) goes off screen. You could keep a reference to the currently editing cell, then resign first responder when that cell goes off screen, but this feels like managing state.
 
-OK but we do want to end the cell editing when it goes off screen, but we don't want to have to keep track of which cell is editing. We know the editing cell is currently the first responder, so how do we get a reference to the first responder? Through some magic, that's how.
+We want to end the cell editing when it goes off screen, but we don't want to have to keep track of which cell is editing. We know the editing cell is currently the first responder, so how do we get a reference to the first responder? Through some magic, that's how.
 
 ## Finding The First Responder
 
-`UIApplication` has a function for sending "Target -> Action" messages. We are going to use that. Checking the docs for `UIApplication.sendAction(_:to:from:forEvent)` shows that if the target is `nil` this action is delivered to the `firstResponder`.
+`UIApplication` has a function for sending "Target -> Action" messages. We are going to use that. [Checking the docs](https://developer.apple.com/library/ios/documentation/UIKit/Reference/UIApplication_Class/index.html#//apple_ref/occ/instm/UIApplication/sendAction:to:from:forEvent:) for `UIApplication.sendAction(_:to:from:forEvent)` shows that if the target is `nil` this action is delivered to the `firstResponder`.
 
 So we will send the first responder a message: 
 
@@ -23,35 +21,26 @@ OK cool we can send `message:` to the first responder, but what should our funct
 We also want this to be callable from anywhere so we will make it a class function on `UIResponder`. It should also return us a responder so that we can end editing on that responder.
 
 ```swift
-
 extension UIResponder  {
     private static weak var currentResponder: UIResponder? = nil
 
-    class func requestFirstResponder() -> UIResponder? {
+    class func findFirstResponder() -> UIResponder? {
         currentResponder = nil
-        UIApplication.sharedApplication().sendAction("getFirstResponder:", to: nil, from: nil, forEvent: nil)
+        UIApplication.sharedApplication().sendAction("saveSelf:", to: nil, from: nil, forEvent: nil)
         return currentResponder
     }
 
-    func getFirstResponder() {
+    func saveSelf() {
         UIResponder.currentResponder = self
     }
 }
 ```
 
-OK so digging through the code above: `requestFirstResponder()` needs to return an optional because you don't always have a first responder. We need to use `sendAction` to the `UIApplication` so that our message gets passed on to the first responder. Our `saveSelf()` function is pretty much as easy as could be. To tie it all up, we need to set the previous responder to nil, before fetching a new first responder, (in case it's nil) then return the found first responder. Finally we will make our `currrentResponder` storage weak since, someone else is certainly holding a reference to it already, the super view, the view controller ... we don't need it to stick around, plus it's optional so we will handle it with care anyway. 
+OK so digging through the code above: `findFirstResponder()` needs to return an optional because you don't always have a first responder. We need to use `sendAction` to the `UIApplication` so that our message gets passed on to the first responder. Our `saveSelf()` function is pretty much as easy as could be. To tie it all up, we need to set the previous responder to nil, before fetching a new first responder, (in case it's nil) then return the found first responder. Finally we will make our `currrentResponder` storage weak since, someone else is certainly holding a reference to it already, the super view, the view controller ... we don't need it to stick around, plus it's optional so we will handle it with care anyway. 
 
 ## When to dismiss
 
-Now that we can get a reference to the first responder at will, we can focus on the second problem, "When should we dismiss the keyboard?".
-
-We have a couple of options:
-
-* When the user scrolls
-* When the user scrolls fast
-* When the text box exits the screen
-
-I think the last one, "When the text field goes off screen", is the best. How do we know when it goes off screen? 
+"When the text field goes off screen" How do we know when it goes off screen? 
 
 The `UITextField` is in a scroll view. So we can just compare the frame of the text field with the scroll view's content offset to see if it is still on screen. Since the table view is a subclass of scroll view we can set ourselves as the `scrollViewDelete` and use those call backs to determine when to dismiss our first responder.
 `scrollViewDidScroll` looks promising but gets called on every frame and may have performance implications. What about
