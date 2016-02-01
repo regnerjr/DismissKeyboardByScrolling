@@ -43,10 +43,10 @@ OK so digging through the code above: `findFirstResponder()` needs to return an 
 "When the text field goes off screen" How do we know when it goes off screen? 
 
 The `UITextField` is in a scroll view. So we can just compare the frame of the text field with the scroll view's content offset to see if it is still on screen. Since the table view is a subclass of scroll view we can set ourselves as the `scrollViewDelete` and use those call backs to determine when to dismiss our first responder.
-`scrollViewDidScroll` looks promising but gets called on every frame and may have performance implications. What about
-```scrollViewDidEndDragging:withDecelerate:```
-is pretty promising but gets called when the users finger lifts after scrolling, how do we know where the screen will stop after it decelerates. The method we really want to use is 
-```scrollViewWillEndDragging(scrollView:withVelocity:targetContentOffset:)```
+`scrollViewDidScroll` looks promising but gets called on every frame and may have performance implications. What about `scrollViewDidEndDragging:withDecelerate:` is pretty promising but gets called when the users finger lifts after scrolling, how do we know where the screen will stop after it decelerates. The method we really want to use is 
+```
+scrollViewWillEndDragging(scrollView:withVelocity:targetContentOffset:)
+```
 This method is amazing. It tells you where the scroll view will be when the animation finishes. This is the one we will use.
 
 Here is the completed method.
