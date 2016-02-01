@@ -2,9 +2,9 @@
 
 I recently had an interesting bug report / feature request. When editing an item in a table view with multiple editable items you can can easily scroll away from it and forget what the keyboard is editing.
 
-A good solution to this issue is to end editing when the thing you are currently editing (the first responder) goes off screen. You could keep a reference to the currently editing cell, then resign first responder when that cell goes off screen, but this feels like managing state.
+A good solution to this issue is to end editing when the first responder goes off screen. You could keep a reference to the currently editing cell, then resign first responder when that cell goes off screen. I try to avoid this type of "state management" when possible. 
 
-We want to end the cell editing when it goes off screen, but we don't want to have to keep track of which cell is editing. We know the editing cell is currently the first responder, so how do we get a reference to the first responder? Through some magic, that's how.
+We want the cell to `endEditing` when it goes off screen. We don't want to keep track of which cell is editing. We know the editing cell is currently the first responder, so how do we get a reference to the first responder? Through some magic, that's how.
 
 ## Finding The First Responder
 
@@ -16,9 +16,9 @@ So we will send the first responder a message:
 UIApplication.sharedApplication().sendAction("message:", to: nil, from: nil, forEvent: nil)
 ```
 
-OK cool we can send `message:` to the first responder, but what should our function do. We need the first responder to receive this message and to do something? probably return self so we can get a reference to it. 
+OK cool we can send `message:` to the first responder, but what should our function do. We need the first responder to receive this message and then do something? probably return self so that we can get a reference to it. 
 
-We also want this to be callable from anywhere so we will make it a class function on `UIResponder`. It should also return us a responder so that we can end editing on that responder.
+We also want this function to be callable from anywhere so we will make it a class function on `UIResponder`. It should also return us a responder so that we can end editing on that responder. Now that we can find and message the first responder. We need a reference to it, so we can determine its frame and detect whether it is still on screen. 
 
 ```swift
 extension UIResponder  {
@@ -42,8 +42,7 @@ OK so digging through the code above: `findFirstResponder()` needs to return an 
 
 "When the text field goes off screen" How do we know when it goes off screen? 
 
-The `UITextField` is in a scroll view. So we can just compare the frame of the text field with the scroll view's content offset to see if it is still on screen. Since the table view is a subclass of scroll view we can set ourselves as the `scrollViewDelete` and use those call backs to determine when to dismiss our first responder.
-`scrollViewDidScroll` looks promising but gets called on every frame and may have performance implications. What about `scrollViewDidEndDragging:withDecelerate:` is pretty promising but gets called when the users finger lifts after scrolling, how do we know where the screen will stop after it decelerates. The method we really want to use is 
+The `UITextField` is in a scroll view. So we can just compare the frame of the text field with the scroll view's content offset to see if it is still on screen. Since the table view is a subclass of scroll view we can set ourselves as the `scrollViewDelegate` and use those call backs to determine when to dismiss our first responder. (actually `UITableViewDelegate` conforms to `UIScrollViewDelegate` so we don't need to declare any new conformance if already conforming to  `UITableViewDelegate`) `scrollViewDidScroll` looks promising but gets called on every frame and may have performance implications. What about `scrollViewDidEndDragging:withDecelerate:` is pretty promising but gets called when the users finger lifts after scrolling, how do we know where the screen will stop after it decelerates. The method we really want to use is 
 ```
 scrollViewWillEndDragging(scrollView:withVelocity:targetContentOffset:)
 ```
@@ -51,24 +50,27 @@ This method is amazing. It tells you where the scroll view will be when the anim
 
 Here is the completed method.
 ```swift
-override func scrollViewWillEndDragging(scrollView: UIScrollView, withVelocity velocity: CGPoint, targetContentOffset: UnsafeMutablePointer<CGPoint>) {
-	// Check if we have a first responder
+override func scrollViewWillEndDragging(scrollView: UIScrollView,
+		withVelocity velocity: CGPoint,
+		targetContentOffset: UnsafeMutablePointer<CGPoint>) {
+		
 	guard let firstResponder = UIResponder.findFirstResponder() as? UIView else { return }
 	// 1
 	let offset = targetContentOffset.memory.y // Get the final Y offset
 	// 2
 	let rectInScrollView = scrollView.convertRect(firstResponder.bounds, fromView: firstResponder)
 	//3
-	let scrollViewFutureBounds = CGRect(origin: CGPoint(x: scrollView.contentOffset.x, y: offset ), size: scrollView.bounds.size)
+	let scrollViewFutureOrigin = CGPoint(x: scrollView.contentOffset.x, y: offset)
+	let scrollViewFutureBounds = CGRect(origin: scrollViewFutureOrigin, size: scrollView.bounds.size)
 	// 4
 	if !scrollViewFutureBounds.contains(rectInScrollView) {
 		firstResponder.endEditing(true)
 	}
 }
 ```
-Line 1 gets the final resting offset off the scroll view, we need to reach through the `memory` because the value is in an `UnsafeMutablePointer`. Line 2 was a bit confusing to me even after the first time I had written it. Remember bounds is always in the view's own coordinate system, so origin is almost always (0,0), and the frame has the origin in the superview's coordinates system, But what we really want is to have the frame of the first responder in the scroll Views coordinate system. We can get this with the `convertRect` method. This will let us know where our first responder sits inside of the scroll view, then we can figure out if it is still on screen. 
+Line 1 gets the final resting offset off the scroll view. We need to reach through the `memory` because the value is in an `UnsafeMutablePointer`. Line 2 was a bit confusing to me even after the first time I had written it. Remember bounds is always in the view's own coordinate system, so origin is almost always (0,0), and the frame has the origin in the superview's coordinates system. However, what we really want is to have the frame of the first responder in the scroll Views coordinate system. We can get this with the `convertRect` method. This will let us know where our first responder sits inside of the scroll view, then we can figure out if it is still on screen. 
 
-Line 3 is where we finally put this new amazing offset to good use. What part of the scroll view's content will be visible when the scroll animation ends. We just build a CGRect using the scroll view's current parts, but having the new offset.
+Line 3 is where we finally put this new amazing offset to good use. We can determine what part of the scroll view's content will be visible when the scroll animation ends by building a CGRect using the scroll view's current parts and replacing the y offset with our new offset.
 Finally on Line 4 we check if the scroll view's visible region contains our first responder. 
 
 ## Closing
